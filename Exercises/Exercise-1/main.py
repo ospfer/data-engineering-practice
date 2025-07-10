@@ -1,5 +1,6 @@
 import os
 import requests
+import zipfile
 
 download_uris = [
     "https://divvy-tripdata.s3.amazonaws.com/Divvy_Trips_2018_Q4.zip",
@@ -30,6 +31,23 @@ def main():
         except Exception as e:
             print(f"Failed to download {uri}: {e}")
 
+    unzip_files(downloads_dir)
+
+    print("All files downloaded and unzipped")
+
+
+def unzip_files(downloads_dir):
+    for file in os.listdir(downloads_dir):
+        if file.endswith(".zip"):
+            print(f"Unzipping {file}...")
+            zip_path = os.path.join(downloads_dir, file)
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(downloads_dir)
+            print(f"Unzipped {file}")
+            os.remove(zip_path)
+            print(f"Deleted {file}")
+
 
 if __name__ == "__main__":
     main()
+
