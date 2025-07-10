@@ -1,5 +1,6 @@
 import os
-import requests
+import aiohttp
+import asyncio
 import zipfile
 
 download_uris = [
@@ -12,42 +13,46 @@ download_uris = [
     "https://divvy-tripdata.s3.amazonaws.com/Divvy_Trips_2220_Q1.zip",
 ]
 
-
-def main():
-    downloads_dir = "downloads"
-    os.makedirs(downloads_dir, exist_ok=True)
-    for uri in download_uris:
-        filename = uri.split("/")[-1]
-        file_path = os.path.join(downloads_dir, filename)
-        try:
-            print(f"Downloading {uri} to {file_path}...")
-            response = requests.get(uri, stream=True)
-            response.raise_for_status()
+async def download_file(session, url, downloads_dir):
+    filename = url.split("/")[-1]
+    file_path = os.path.join(downloads_dir, filename)
+    try:
+        async with session.get(url) as resp:
+            resp.raise_for_status()
             with open(file_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-            print(f"Downloaded {filename}")
-        except Exception as e:
-            print(f"Failed to download {uri}: {e}")
+                while True:
+                    chunk = await resp.content.read(8192)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+        print(f"Downloaded {filename}")
+    except Exception as e:
+        print(f"Failed to download {url}: {e}")
 
-    unzip_files(downloads_dir)
-
-    print("All files downloaded and unzipped")
-
-
-def unzip_files(downloads_dir):
+async def unzip_files(downloads_dir):
+    loop = asyncio.get_event_loop()
     for file in os.listdir(downloads_dir):
         if file.endswith(".zip"):
-            print(f"Unzipping {file}...")
             zip_path = os.path.join(downloads_dir, file)
-            with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                zip_ref.extractall(downloads_dir)
-            print(f"Unzipped {file}")
-            os.remove(zip_path)
-            print(f"Deleted {file}")
+            print(f"Unzipping {file}...")
+            # Run blocking zip extraction in a thread to avoid blocking the event loop
+            await loop.run_in_executor(None, extract_and_delete_zip, zip_path, downloads_dir)
+            print(f"Unzipped and deleted {file}")
 
+def extract_and_delete_zip(zip_path, extract_to):
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        zip_ref.extractall(extract_to)
+    os.remove(zip_path)
+
+async def main():
+    downloads_dir = "downloads"
+    os.makedirs(downloads_dir, exist_ok=True)
+    async with aiohttp.ClientSession() as session:
+        tasks = [download_file(session, url, downloads_dir) for url in download_uris]
+        await asyncio.gather(*tasks)
+    await unzip_files(downloads_dir)
+    print("All files downloaded and unzipped")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
 
